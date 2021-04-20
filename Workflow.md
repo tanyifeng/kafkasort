@@ -12,7 +12,7 @@ For every partion of topic "source", I make a sarama consume partition , and run
 
 Then I sort these data with key "id", and save it to sub topic "id1", with 4 * 4 partions, just the same as topic "source", every partion has a go routing. The data will be distributed in the following format. Data is ordered from partion1 to partionp
 
-![image-20210420202325863](https://github.com/tanyifeng/kafkasort/blob/master/id1.png)
+![id1](https://github.com/tanyifeng/kafkasort/blob/master/id1.png)
 
 Then continue sort these data with key "name", save it to sub topic "name1", the same as topic "id1", then sort and save with key "continent".
 
