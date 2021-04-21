@@ -235,7 +235,7 @@ func ProduceSource(broker *sarama.Broker, config *sarama.Config, topic string) e
 			part := i / divide
 			randomData := NewRandomDataSchema()
 			// unsafe.Sizeof(sarama.ProducerMessage) is 160
-			msgs := make([]*sarama.ProducerMessage, sendBuffer)
+			msgs := make([]*sarama.ProducerMessage, sendBuffer * 2)
 			msgIndex := 0
 			for j := i; (j < i + divide) && j < size; j++ {
 				msg := sarama.ProducerMessage{Topic: topic, Partition: int32(part), Key: nil, Value: sarama.StringEncoder(randomData.Generate().String())}
