@@ -17,10 +17,13 @@ import "github.com/Shopify/sarama"
 var totalNum = 0
 var maxPartNum = 0
 var maxSplitMsgNum = 0
+var produceSourceFinish = false
 
 const partionNums = 2
 const addressConnect = "localhost:9092"
-const sendBuffer = 64 * 1024
+const sendBuffer = 64 * 1024 * 3
+const largerBuffer = 64 * 1024 * 8
+const mergeBuffer = 64 * 1024 * 6
 
 var partNumMap map[string]map[string]int
 
@@ -185,7 +188,11 @@ func ProduceSortedSubTopic(broker *sarama.Broker, config *sarama.Config, topic s
 			defer client.Close()
 			defer producer.Close()
 			part := i / divide
-			msgs := make([]*sarama.ProducerMessage, sendBuffer)
+			buffSize := sendBuffer
+			if produceSourceFinish {
+				buffSize = largerBuffer
+			}
+			msgs := make([]*sarama.ProducerMessage, buffSize)
 			msgIndex := 0
 			for j := i; (j < i+divide) && j < size; j++ {
 				msg := sarama.ProducerMessage{Topic: subTopic, Partition: int32(part), Key: nil, Value: sarama.StringEncoder(sources[j].String())}
@@ -257,11 +264,14 @@ func ProduceSource(broker *sarama.Broker, config *sarama.Config, topic string) e
 					return
 				}
 			}
+			if part == partionNums - 1 {
+				produceSourceFinish = true
+				tProduce2 := time.Now()
+				fmt.Printf("Generate topic %s with %d messages past %.2fs\n\n", topic, size, tProduce2.Sub(tProduce1).Seconds())
+			}
 		}(i)
 	}
 	wgSend.Wait()
-	tProduce2 := time.Now()
-	fmt.Printf("Generate topic %s with %d messages past %.2fs\n\n", topic, size, tProduce2.Sub(tProduce1).Seconds())
 	return nil
 }
 
@@ -392,7 +402,7 @@ func MergeSplitedSubTopic(broker *sarama.Broker, config *sarama.Config) {
 	for topic, subMap := range partNumMap {
 		wgTopic.Add(1)
 
-		func (topic string, subMap map[string]int) {
+		go func (topic string, subMap map[string]int) {
 			defer wgTopic.Done()
 			tTopic1 := time.Now()
 			fmt.Printf("Beginning to produce topic: %s \n", topic)
@@ -426,7 +436,7 @@ func MergeSplitedSubTopic(broker *sarama.Broker, config *sarama.Config) {
 			curVal := make([]*dataSchema, mapSize)
 
 			curMinIndex := -1
-			msgs := make([]*sarama.ProducerMessage, sendBuffer)
+			msgs := make([]*sarama.ProducerMessage, mergeBuffer)
 			msgIndex := 0
 			for {
 				for mapIndex := 0; mapIndex < mapSize; mapIndex++ {
@@ -488,7 +498,7 @@ func main() {
 	partNumMap = make(map[string]map[string]int)
 
 	flag.IntVar(&totalNum, "total", 50000000, "Total messages number")
-	flag.IntVar(&maxPartNum, "parts", 100, "Split number, means handle (total / parts) number everytime when merge sort")
+	flag.IntVar(&maxPartNum, "parts", 20, "Split number, means handle (total / parts) number everytime when merge sort")
 	flag.Parse()
 	maxSplitMsgNum = totalNum / maxPartNum
 	fmt.Printf("total messages: %d, handle %d everytime\n", totalNum, maxSplitMsgNum)
