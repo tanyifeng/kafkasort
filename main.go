@@ -208,12 +208,13 @@ func ProduceSource(broker *sarama.Broker, config *sarama.Config, topic string) e
 	for i := 0; i < size; i += divide {
 		wgSend.Add(1)
 		go func(i int) {
-			defer wgSend.Done()
+			//defer wgSend.Done()
 			client, producer, err := CreateTopicAndProducer(broker, config, topic)
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
+			wgSend.Done()
 			defer client.Close()
 			defer producer.Close()
 			part := i / divide
