@@ -18,8 +18,9 @@ var totalNum = 0
 var maxPartNum = 0
 var maxSplitMsgNum = 0
 
-const partionNums = 4 * 4
+const partionNums = 2
 const addressConnect = "localhost:9092"
+const sendBuffer = 64 * 1024
 
 var partNumMap map[string]map[string]int
 
@@ -184,11 +185,25 @@ func ProduceSortedSubTopic(broker *sarama.Broker, config *sarama.Config, topic s
 			defer client.Close()
 			defer producer.Close()
 			part := i / divide
+			msgs := make([]*sarama.ProducerMessage, sendBuffer)
+			msgIndex := 0
 			for j := i; (j < i+divide) && j < size; j++ {
 				msg := sarama.ProducerMessage{Topic: subTopic, Partition: int32(part), Key: nil, Value: sarama.StringEncoder(sources[j].String())}
-				_, _, err := producer.SendMessage(&msg)
+				msgs[msgIndex] = &msg
+				msgIndex++
+				if msgIndex == len(msgs) {
+					msgIndex = 0
+					err = producer.SendMessages(msgs)
+					if err != nil {
+						fmt.Println("send sorted messages:", err)
+						return
+					}
+				}
+			}
+			if msgIndex != 0 {
+				err = producer.SendMessages(msgs[:msgIndex])
 				if err != nil {
-					fmt.Println(err)
+					fmt.Println("send sorted messages:", err)
 					return
 				}
 			}
@@ -196,7 +211,7 @@ func ProduceSortedSubTopic(broker *sarama.Broker, config *sarama.Config, topic s
 	}
 	wg.Wait()
 	t2 := time.Now()
-	fmt.Printf("Send to subTopic %s with %d messages past %vs\n\n", subTopic, size, t2.Sub(t1).Seconds())
+	fmt.Printf("Send to subTopic %s with %d messages past %.2fs\n\n", subTopic, size, t2.Sub(t1).Seconds())
 }
 
 func ProduceSource(broker *sarama.Broker, config *sarama.Config, topic string) error {
@@ -219,11 +234,26 @@ func ProduceSource(broker *sarama.Broker, config *sarama.Config, topic string) e
 			defer producer.Close()
 			part := i / divide
 			randomData := NewRandomDataSchema()
+			// unsafe.Sizeof(sarama.ProducerMessage) is 160
+			msgs := make([]*sarama.ProducerMessage, sendBuffer)
+			msgIndex := 0
 			for j := i; (j < i + divide) && j < size; j++ {
 				msg := sarama.ProducerMessage{Topic: topic, Partition: int32(part), Key: nil, Value: sarama.StringEncoder(randomData.Generate().String())}
-				_, _, err := producer.SendMessage(&msg)
+				msgs[msgIndex] = &msg
+				msgIndex++
+				if msgIndex == len(msgs) {
+					msgIndex = 0
+					err = producer.SendMessages(msgs)
+					if err != nil {
+						fmt.Println("send source messages:", err)
+						return
+					}
+				}
+			}
+			if msgIndex != 0 {
+				err = producer.SendMessages(msgs[:msgIndex])
 				if err != nil {
-					fmt.Println("send message:", err)
+					fmt.Println("send source messages:", err)
 					return
 				}
 			}
@@ -231,7 +261,7 @@ func ProduceSource(broker *sarama.Broker, config *sarama.Config, topic string) e
 	}
 	wgSend.Wait()
 	tProduce2 := time.Now()
-	fmt.Printf("Generate topic %s with %d messages past %vs\n\n", topic, size, tProduce2.Sub(tProduce1).Seconds())
+	fmt.Printf("Generate topic %s with %d messages past %.2fs\n\n", topic, size, tProduce2.Sub(tProduce1).Seconds())
 	return nil
 }
 
@@ -288,7 +318,7 @@ func SortAndProduce(topic string, broker *sarama.Broker, config *sarama.Config, 
 		})
 	}
 	sort2 := time.Now()
-	fmt.Printf("Sort subTopic %s with %d messages past %vs\n\n", subTopic, size, sort2.Sub(sort1).Seconds())
+	fmt.Printf("Sort subTopic %s with %d messages past %.2fs\n\n", subTopic, size, sort2.Sub(sort1).Seconds())
 	ProduceSortedSubTopic(broker, config, topic, subTopic, sources, size)
 }
 
@@ -341,7 +371,7 @@ func SplitAndProduceSubTopic(broker *sarama.Broker, config *sarama.Config, topic
 		remainTotal -= curIndex
 
 		t2 := time.Now()
-		fmt.Printf("Consume topic %s past %vs\n\n", topic, t2.Sub(t1).Seconds())
+		fmt.Printf("Consume topic %s past %.2fs\n\n", topic, t2.Sub(t1).Seconds())
 
 		SortAndProduce("id", broker, config, curTopicIndex, sources, curIndex)
 		SortAndProduce("name", broker, config, curTopicIndex, sources, curIndex)
@@ -362,7 +392,7 @@ func MergeSplitedSubTopic(broker *sarama.Broker, config *sarama.Config) {
 	for topic, subMap := range partNumMap {
 		wgTopic.Add(1)
 
-		go func (topic string, subMap map[string]int) {
+		func (topic string, subMap map[string]int) {
 			defer wgTopic.Done()
 			tTopic1 := time.Now()
 			fmt.Printf("Beginning to produce topic: %s \n", topic)
@@ -396,6 +426,8 @@ func MergeSplitedSubTopic(broker *sarama.Broker, config *sarama.Config) {
 			curVal := make([]*dataSchema, mapSize)
 
 			curMinIndex := -1
+			msgs := make([]*sarama.ProducerMessage, sendBuffer)
+			msgIndex := 0
 			for {
 				for mapIndex := 0; mapIndex < mapSize; mapIndex++ {
 					if curVal[mapIndex] == nil && partionIndexes[mapIndex] < len(subConsumeIters[mapIndex]) && subConsumeIters[mapIndex][partionIndexes[mapIndex]].HasNext() {
@@ -418,25 +450,37 @@ func MergeSplitedSubTopic(broker *sarama.Broker, config *sarama.Config) {
 					}
 				}
 				if curMinIndex == -1 {
+					if msgIndex != 0 {
+						err = producer.SendMessages(msgs[:msgIndex])
+						if err != nil {
+							fmt.Printf("produce topic error: %s:%s", topic, err.Error())
+							return
+						}
+					}
 					break
 				}
 				msg := sarama.ProducerMessage{Topic: topic, Partition: int32(curProduceIndex / divide), Key: nil, Value: sarama.StringEncoder(curVal[curMinIndex].String())}
-				_, _, err = producer.SendMessage(&msg)
-				if err != nil {
-					fmt.Println(err)
-					return
+				msgs[msgIndex] = &msg
+				msgIndex++
+				if msgIndex == len(msgs) {
+					msgIndex = 0
+					err = producer.SendMessages(msgs)
+					if err != nil {
+						fmt.Printf("produce topic error: %s:%s", topic, err.Error())
+						return
+					}
 				}
 				curProduceIndex++
 				curVal[curMinIndex] = nil
 				curMinIndex = -1
 			}
 			tTopic2 := time.Now()
-			fmt.Printf("Generate and produce topic: %s with %d messages past %vs\n", topic, curProduceIndex, tTopic2.Sub(tTopic1).Seconds())
+			fmt.Printf("Generate and produce topic: %s with %d messages past %.2fs\n", topic, curProduceIndex, tTopic2.Sub(tTopic1).Seconds())
 		}(topic, subMap)
 	}
 	wgTopic.Wait()
 	merge2 := time.Now()
-	fmt.Printf("merge total messages past %vs\n\n", merge2.Sub(merge1).Seconds())
+	fmt.Printf("merge total messages past %.2fs\n\n", merge2.Sub(merge1).Seconds())
 }
 
 func main() {
@@ -476,5 +520,5 @@ func main() {
 	MergeSplitedSubTopic(broker, config)
 
 	total2 := time.Now()
-	fmt.Printf("total time past %vs\n\n", total2.Sub(total1).Seconds())
+	fmt.Printf("total time past %.2fs\n\n", total2.Sub(total1).Seconds())
 }
