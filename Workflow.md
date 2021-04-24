@@ -25,3 +25,9 @@ For each topic of ["id", "name", "continent"], I run a go routing to merge, such
 Creating an producer of topic "id", read one message from every sub topic of id, we get an array with p lines of message, find the minimum message in this array, produce it to topic "id", if the minimum message comes from idx, we read next message of idx, save to array again.
 
 Continue this merge flow  to the end and finish the whole sort.
+
+# Optimization
+
+1. Consume source when produce source, this make produce and consume like streaming.
+2. Cache multiple messages and produce by once call.
+3. Adjust size of the cache to make the total memory of the program close to the upper limit.
