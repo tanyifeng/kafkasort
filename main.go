@@ -23,7 +23,7 @@ const partionNums = 2
 const addressConnect = "localhost:9092"
 const sendBuffer = 64 * 1024 * 3
 const largerBuffer = 64 * 1024 * 8
-const mergeBuffer = 64 * 1024 * 6
+const mergeBuffer = 64 * 1024 * 2
 
 var partNumMap map[string]map[string]int
 
