@@ -1,4 +1,4 @@
-One principle, for every topic we produced, such as source, id or name, I use 4 * 4 partions to produce, and every partion using one go routing.
+One principle, for every topic we produced, such as source, id or name, I use 2 partions to produce, and every partion has a go routing.
 
 # Produce Random Source
 
@@ -8,11 +8,11 @@ I make a generator for generating one formatted data once a call. For every part
 
 If we have n lines of data, let we split data with p parts, it means we will handle n / p lines of data every time. Take topic "id" as example, p is also the same as numbers of sub topic, topic name range from [id1, id2, id3, ..., idp].
 
-For every partion of topic "source", I make a sarama consume partition , and run a go routing to read, all the go routing read n / p lines in total.
+For every partion of topic "source", I make a sarama consume partition , and run a go routing to read, produce and read  source are at the same time, all the go routing read n / p lines in total.
 
 Then I sort these data with key "id", and save it to sub topic "id1", with 4 * 4 partions, just the same as topic "source", every partion has a go routing. The data will be distributed in the following format. Data is ordered from partion1 to partionp
 
-![id1](https://github.com/tanyifeng/kafkasort/blob/master/id1.png)
+![image-20210420202325863](C:\Users\qw\AppData\Roaming\Typora\typora-user-images\image-20210420202325863.png)
 
 Then continue sort these data with key "name", save it to sub topic "name1", the same as topic "id1", then sort and save with key "continent".
 
