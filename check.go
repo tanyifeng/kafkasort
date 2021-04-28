@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Shopify/sarama"
+	"math"
 )
 
+const partionNums = 2
 const addressConnect = "localhost:9092"
 
 func main() {
@@ -40,16 +42,21 @@ func main() {
 		}
 
 		pSize := len(partions)
-		fmt.Printf("topic: %s\n", topic)
-		fmt.Printf("partions: %s\n", pSize)
+		divide := int(math.Ceil(float64(total) / partionNums))
+		fmt.Printf("\ntopic: %s\n", topic)
+		fmt.Printf("partions len: %d\n", pSize)
 		fmt.Printf("data: \n")
-		for _, partion := range partions {
+		for index, partion := range partions {
+			count := divide
+			if index == pSize - 1 {
+				count = total - divide * index
+			}
 			pc, err := consumer.ConsumePartition(topic, partion, sarama.OffsetOldest)
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
-			for i := 0; i < total; i++ {
+			for i := 0; i < count; i++ {
 				msg := <- pc.Messages()
 				fmt.Println(string(msg.Value))
 			}
